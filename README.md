@@ -44,7 +44,7 @@ A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented 
 ├── sync_fifo.v              # RTL design of synchronous FIFO
 ├── sync_fifo_tb.v           # Directed Verilog testbench
 ├── sync_fifo_uvm_tb.sv      # SystemVerilog UVM 1.2 testbench (single-file architecture)
-├── sync_fifo_monitor.txt    # Directed simulation transcript ($monitor output)
+├── sync_fifo_monitor_verilog.txt  # Directed simulation transcript ($monitor output)
 ├── waveform.png             # Simulation waveform screenshot (Vivado)
 └── README.md                # Documentation
 ```
