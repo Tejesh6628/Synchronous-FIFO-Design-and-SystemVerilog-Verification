@@ -1,6 +1,6 @@
-# Synchronous FIFO — Design & Verification (Verilog & UVM)
+# Synchronous FIFO — Design & SystemVerilog Layered OOP Verification
 
-A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented in Verilog, verified using both a directed Verilog testbench and a complete **SystemVerilog UVM 1.2** verification environment.
+A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented in Verilog, verified using a modular, class-based **SystemVerilog OOP Layered Testbench** with constrained-random stimulus and an automated self-checking scoreboard.
 
 ---
 
@@ -41,85 +41,73 @@ A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented 
 
 ```
 .
-├── sync_fifo.v              # RTL design of synchronous FIFO
-├── sync_fifo_tb.v           # Directed Verilog testbench
-├── sync_fifo_uvm_tb.sv      # SystemVerilog UVM 1.2 testbench (single-file architecture)
+├── sync_fifo.v                    # RTL design of synchronous FIFO
+├── sync_fifo_tb.v                 # Directed Verilog testbench
+├── sync_fifo_sv_tb.sv             # SystemVerilog OOP Layered testbench
 ├── sync_fifo_monitor_verilog.txt  # Directed simulation transcript ($monitor output)
-├── waveform.png             # Simulation waveform screenshot (Vivado)
-└── README.md                # Documentation
+├── waveform.png                   # Simulation waveform screenshot (Vivado)
+└── README.md                      # Project documentation
 ```
 
 ---
 
-## 🏗️ UVM Verification Architecture
+## 🏗️ SystemVerilog Layered OOP Architecture
 
-The UVM testbench (`sync_fifo_uvm_tb.sv`) follows the standard Universal Verification Methodology:
+The verification environment (`sync_fifo_sv_tb.sv`) follows the industry-standard modular layered architecture using SystemVerilog classes, mailboxes, and virtual interfaces:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                   fifo_base_test                       │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                     fifo_env                     │  │
-│  │  ┌───────────────────────┐   ┌────────────────┐  │  │
-│  │  │      fifo_agent       │   │fifo_scoreboard │  │  │
-│  │  │  ┌─────────────────┐  │   │ (queue-based   │  │  │
-│  │  │  │  sequencer      │  │   │  golden model) │  │  │
-│  │  │  │  ↓ (seq_item)   │  │   │                │  │  │
-│  │  │  │  driver ───────────────┼─► DUT          │  │  │
-│  │  │  │                 │  │   │    │           │  │  │
-│  │  │  └─────────────────┘  │   │    ▼           │  │  │
-│  │  │     monitor ──────────────┼──► analysis_imp│  │  │
-│  │  └───────────────────────┘   └────────────────┘  │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────┬──────────────────────────────┘
-                          │
-                   fifo_if (virtual)
+│                      environment                       │
+│                                                        │
+│  ┌───────────┐  gen2drv   ┌────────┐   vif   ┌──────┐  │
+│  │ generator │──mailbox──►│ driver │────────►│ DUT  │  │
+│  └───────────┘            └────────┘         └──┬───┘  │
+│                                                 │      │
+│  ┌────────────┐ mon2scb   ┌─────────┐   vif     │      │
+│  │ scoreboard │◄─mailbox──│ monitor │◄──────────┘      │
+│  └────────────┘           └─────────┘                  │
+└────────────────────────────────────────────────────────┘
 ```
 
-### Components
-1. **`fifo_if`**: Bundles interface signals connecting testbench to the DUT.
-2. **`fifo_seq_item`**: Sequence item defining randomized stimulus (`w_enb`, `r_enb`, `din`).
-3. **`fifo_base_sequence`**: Orchestrates stimulus scenarios (FIFO fill, overflow, drain, underflow, concurrent R/W).
-4. **`fifo_sequencer`**: Buffers and delivers sequence items to the driver.
-5. **`fifo_driver`**: Translates sequence items into pin-level activity on `negedge clk` to maintain clean setup time.
-6. **`fifo_monitor`**: Samples interface signals after clock edges and publishes them via `uvm_analysis_port`.
-7. **`fifo_scoreboard`**: Compares sampled DUT outputs and flags against an internal golden reference model (`ref_fifo[$]`).
-8. **`fifo_agent` & `fifo_env`**: Encapsulates components into a standard modular testbench hierarchy.
-9. **`tb_top`**: Top-level simulation module generating clock, reset, and invoking `run_test()`.
+### Key Components
+
+| Component | Class Type | Role & Responsibilities |
+|---|---|---|
+| **Transaction** | `class transaction` | Holds randomized stimulus data (`w_enb`, `r_enb`, `din`) and outputs (`dout`, `full`, `empty`). Includes constraints to prevent illegal idle cycles. |
+| **Generator** | `class generator` | Creates transaction objects, applies constrained-random stimulus for 5 test phases (fill, overflow, drain, underflow, random R/W), and delivers them via `gen2drv` mailbox. |
+| **Driver** | `class driver` | Retrieves transactions from `gen2drv` mailbox and drives the physical interface pins on `negedge clk` to maintain stable 5ns setup time. |
+| **Monitor** | `class monitor` | Passively samples the interface pins on `posedge clk + 1ns` and forwards active write/read transactions into `mon2scb` mailbox. |
+| **Scoreboard** | `class scoreboard` | Implements a golden reference model using an unbounded queue (`ref_fifo[$]`). Automatically compares DUT output against expected data and validates `full`/`empty` flag correctness. |
+| **Environment** | `class environment` | Instantiates transactors, connects mailboxes (`gen2drv`, `mon2scb`), and launches concurrent execution using `fork ... join_any`. |
+| **Interface** | `interface fifo_if` | Encapsulates all FIFO signals and provides clean connectivity between testbench classes and RTL DUT. |
 
 ---
 
-## 🧪 Simulation Results
+## 🧪 Verification Plan & Test Scenarios
 
-### 1. Directed Simulation Waveform (Vivado)
-![Simulation Waveform](waveform.png)
+The generator systematically verifies the FIFO through 5 distinct test phases:
 
-### 2. UVM Simulation Report (Vivado XSim)
-```text
---- UVM Report Summary ---
-
-** Report counts by severity
-UVM_INFO :    5
-UVM_WARNING :    0
-UVM_ERROR :    0
-UVM_FATAL :    0
-** Report counts by id
-[RNTST]     1
-[TEST_DONE]     1
-[UVM/COMP/NAMECHECK]     1
-[UVM/RELNOTES]     1
-[fifo_scoreboard]     1
-```
+1. **Write Burst**: Fills the FIFO to its full capacity (8 writes); validates `full` flag assertion.
+2. **Overflow Test**: Attempts to write into a full FIFO; verifies data is not overwritten and count does not increment.
+3. **Read Burst**: Drains all items from the FIFO; validates FIFO ordering and `empty` flag assertion.
+4. **Underflow Test**: Attempts to read from an empty FIFO; verifies no invalid data is produced.
+5. **Random Concurrent R/W**: Stresses simultaneous read and write operations; verifies pointers and data integrity under continuous load.
 
 ---
 
 ## 🚀 How to Run in Xilinx Vivado
 
-### Running the UVM Testbench:
 1. Open Vivado and add `sync_fifo.v` as a **Design Source**.
-2. Add `sync_fifo_uvm_tb.sv` as a **Simulation Source** (ensure file type is set to **SystemVerilog**).
-3. Open **Simulation Settings**:
-   - In **Compilation** tab (`xvlog.more_options`), add: `-L uvm`
-   - In **Elaboration** tab (`xelab.more_options`), add: `-L uvm`
-4. Set `tb_top` as top module under simulation sources.
-5. Click **Run Behavioral Simulation**.
+2. Add `sync_fifo_sv_tb.sv` as a **Simulation Source** (file type: **SystemVerilog**).
+3. In the Sources window under `sim_1`, right-click `tb_top` $\rightarrow$ **Set as Top**.
+4. In Flow Navigator, click **Run Simulation $\rightarrow$ Run Behavioral Simulation**.
+5. Check the Vivado **Tcl Console** for the automated scoreboard report:
+   ```text
+   ==============================================
+              SCOREBOARD FINAL REPORT            
+   ==============================================
+    Total Matches (PASSED): 20
+    Total Errors  (FAILED): 0
+    RESULT: *** TEST PASSED SUCCESSFULLY ***
+   ==============================================
+   ```
