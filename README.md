@@ -103,11 +103,16 @@ The generator systematically verifies the FIFO through 5 distinct test phases:
 4. In Flow Navigator, click **Run Simulation $\rightarrow$ Run Behavioral Simulation**.
 5. Check the Vivado **Tcl Console** for the automated scoreboard report:
    ```text
-   ==============================================
-              SCOREBOARD FINAL REPORT            
-   ==============================================
-    Total Matches (PASSED): 20
-    Total Errors  (FAILED): 0
-    RESULT: *** TEST PASSED SUCCESSFULLY ***
-   ==============================================
+   Test 1: Writing 8 items to fill FIFO
+   Test 2: Overflow test (writing to full FIFO)
+   Test 3: Reading 8 items to empty FIFO
+   [SCB] MATCH: dout = 0x35a2 (exp = 0x35a2)
+   ...
+   Test 4: Underflow test (reading from empty FIFO)
+   Test 5: Random concurrent read and write operations
+   [SCB] MATCH: ...
+
+   --- SCOREBOARD SUMMARY ---
+   Matches: 19 | Errors: 0
+   Status: PASSED
    ```
