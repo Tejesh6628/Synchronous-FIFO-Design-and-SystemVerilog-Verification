@@ -1,10 +1,10 @@
-# Synchronous FIFO — Design & Verification (Verilog)
+# Synchronous FIFO — Design & Verification (Verilog & UVM)
 
-A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented in Verilog with a comprehensive testbench. The design uses a single clock domain for both read and write operations and includes full/empty status flags.
+A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented in Verilog, verified using both a directed Verilog testbench and a complete **SystemVerilog UVM 1.2** verification environment.
 
 ---
 
-## 📐 Architecture
+## 📐 FIFO Architecture
 
 ```
             ┌─────────────────────────────────┐
@@ -29,82 +29,97 @@ A parameterizable **Synchronous FIFO** (First-In, First-Out) buffer implemented 
 | `empty` | Output | 1 | High when FIFO is empty |
 
 ### Design Highlights
-
 - **Parameterizable** depth (default 8) and data width (default 16-bit).
-- **Circular buffer** using modular wrap-around pointers (`wptr`, `rptr`).
-- **Element counter** (`count`) for clean full/empty flag generation.
-- **Overflow protection** — writes are ignored when `full` is asserted.
-- **Underflow protection** — reads are ignored when `empty` is asserted.
-- **Simultaneous R/W** support — count remains stable during concurrent read and write.
+- **Circular buffer** using modular pointer indexing (`wptr`, `rptr`).
+- **Internal counter** (`count`) for clean flag generation.
+- **Overflow & underflow protection** against illegal read/write operations.
+- **Simultaneous Read & Write** supported without losing data integrity.
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-Synchronous_FIFO/
-├── sync_fifo.v              # RTL design of the synchronous FIFO
-├── sync_fifo_tb.v           # Verilog testbench
-├── sync_fifo_monitor.txt    # Simulation log ($monitor output)
+.
+├── sync_fifo.v              # RTL design of synchronous FIFO
+├── sync_fifo_tb.v           # Directed Verilog testbench
+├── sync_fifo_uvm_tb.sv      # SystemVerilog UVM 1.2 testbench (single-file architecture)
+├── sync_fifo_monitor.txt    # Directed simulation transcript ($monitor output)
 ├── waveform.png             # Simulation waveform screenshot (Vivado)
-└── README.md                # This file
+└── README.md                # Documentation
 ```
 
 ---
 
-## 🧪 Testbench & Verification
+## 🏗️ UVM Verification Architecture
 
-The testbench (`sync_fifo_tb.v`) exercises the FIFO through five scenarios:
+The UVM testbench (`sync_fifo_uvm_tb.sv`) follows the standard Universal Verification Methodology:
 
-| # | Test | What It Verifies |
-|---|------|------------------|
-| 1 | **Write Test** | Fills the FIFO with 8 random 16-bit values; `full` flag asserts after the 8th write. |
-| 2 | **Overflow Test** | Attempts 2 more writes while `full = 1`; data and count must not change. |
-| 3 | **Read Test** | Drains all 8 entries in FIFO order; `empty` flag asserts after the last read. |
-| 4 | **Underflow Test** | Attempts reads while `empty = 1`; output and count must remain stable. |
-| 5 | **Simultaneous R/W** | Asserts both `w_enb` and `r_enb` together; count stays constant, data flows through. |
-| 6 | **Alternating R/W** | Alternates single writes and reads to verify pointer tracking. |
+```
+┌────────────────────────────────────────────────────────┐
+│                   fifo_base_test                       │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │                     fifo_env                     │  │
+│  │  ┌───────────────────────┐   ┌────────────────┐  │  │
+│  │  │      fifo_agent       │   │fifo_scoreboard │  │  │
+│  │  │  ┌─────────────────┐  │   │ (queue-based   │  │  │
+│  │  │  │  sequencer      │  │   │  golden model) │  │  │
+│  │  │  │  ↓ (seq_item)   │  │   │                │  │  │
+│  │  │  │  driver ───────────────┼─► DUT          │  │  │
+│  │  │  │                 │  │   │    │           │  │  │
+│  │  │  └─────────────────┘  │   │    ▼           │  │  │
+│  │  │     monitor ──────────────┼──► analysis_imp│  │  │
+│  │  └───────────────────────┘   └────────────────┘  │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────┬──────────────────────────────┘
+                          │
+                   fifo_if (virtual)
+```
 
-### Simulation Waveform
+### Components
+1. **`fifo_if`**: Bundles interface signals connecting testbench to the DUT.
+2. **`fifo_seq_item`**: Sequence item defining randomized stimulus (`w_enb`, `r_enb`, `din`).
+3. **`fifo_base_sequence`**: Orchestrates stimulus scenarios (FIFO fill, overflow, drain, underflow, concurrent R/W).
+4. **`fifo_sequencer`**: Buffers and delivers sequence items to the driver.
+5. **`fifo_driver`**: Translates sequence items into pin-level activity on `negedge clk` to maintain clean setup time.
+6. **`fifo_monitor`**: Samples interface signals after clock edges and publishes them via `uvm_analysis_port`.
+7. **`fifo_scoreboard`**: Compares sampled DUT outputs and flags against an internal golden reference model (`ref_fifo[$]`).
+8. **`fifo_agent` & `fifo_env`**: Encapsulates components into a standard modular testbench hierarchy.
+9. **`tb_top`**: Top-level simulation module generating clock, reset, and invoking `run_test()`.
 
+---
+
+## 🧪 Simulation Results
+
+### 1. Directed Simulation Waveform (Vivado)
 ![Simulation Waveform](waveform.png)
 
-> Captured from **Xilinx Vivado** Behavioral Simulation showing `clk`, `reset`, `w_enb`, `r_enb`, `din`, `dout`, `full`, and `empty` signals.
+### 2. UVM Simulation Report (Vivado XSim)
+```text
+--- UVM Report Summary ---
 
----
-
-## 🚀 How to Run
-
-### Using Xilinx Vivado
-
-1. Create a new project and add `sync_fifo.v` as a design source.
-2. Add `sync_fifo_tb.v` as a simulation source.
-3. Run **Behavioral Simulation**.
-
-### Using Icarus Verilog (open-source)
-
-```bash
-iverilog -o sync_fifo_tb.vvp sync_fifo.v sync_fifo_tb.v
-vvp sync_fifo_tb.vvp
+** Report counts by severity
+UVM_INFO :    5
+UVM_WARNING :    0
+UVM_ERROR :    0
+UVM_FATAL :    0
+** Report counts by id
+[RNTST]     1
+[TEST_DONE]     1
+[UVM/COMP/NAMECHECK]     1
+[UVM/RELNOTES]     1
+[fifo_scoreboard]     1
 ```
 
 ---
 
-## ⚙️ Parameters
+## 🚀 How to Run in Xilinx Vivado
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `Depth` | 8 | Number of entries in the FIFO |
-| `Width` | 16 | Bit-width of each data entry |
-
-Override at instantiation:
-
-```verilog
-sync_fifo #(.Depth(16), .Width(32)) my_fifo ( ... );
-```
-
----
-
-## 📄 License
-
-This project is open-source and available for educational and personal use.
+### Running the UVM Testbench:
+1. Open Vivado and add `sync_fifo.v` as a **Design Source**.
+2. Add `sync_fifo_uvm_tb.sv` as a **Simulation Source** (ensure file type is set to **SystemVerilog**).
+3. Open **Simulation Settings**:
+   - In **Compilation** tab (`xvlog.more_options`), add: `-L uvm`
+   - In **Elaboration** tab (`xelab.more_options`), add: `-L uvm`
+4. Set `tb_top` as top module under simulation sources.
+5. Click **Run Behavioral Simulation**.
